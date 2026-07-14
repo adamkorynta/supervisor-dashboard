@@ -1,0 +1,260 @@
+/*
+ * Copyright (c) 2026
+ * United States Army Corps of Engineers - Hydrologic Engineering Center (USACE/HEC)
+ * All Rights Reserved.  USACE PROPRIETARY/CONFIDENTIAL.
+ * Source may not be released without written approval from HEC
+ */
+
+@import 'bootstrap/dist/css/bootstrap.min.css';
+
+:root {
+  --gei-blue: #00467f;
+  --gei-blue-dark: #00335d;
+  --gei-blue-light: #e6edf2;
+  --gei-accent: #00a9e0;
+  --bs-primary: var(--gei-blue);
+  --bs-primary-rgb: 0, 70, 127;
+  --bs-body-bg: #f5f7fa;
+}
+
+body {
+  background-color: var(--bs-body-bg);
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #333;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.sidebar {
+  min-height: 100vh;
+  background-color: var(--gei-blue);
+  border-right: none;
+  color: white;
+}
+
+.sidebar .nav-link {
+  color: rgba(255, 255, 255, 0.75);
+  transition: all 0.2s ease;
+}
+
+.sidebar .nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.sidebar .nav-link.active {
+  background-color: white;
+  color: var(--gei-blue);
+  font-weight: 700;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-card {
+  border: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+  border-radius: 0.75rem;
+  background-color: #fff;
+  padding: 1.5rem;
+  height: 100%;
+  border-top: 4px solid var(--gei-blue);
+}
+
+.supervisor-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.supervisor-metric-grid .dashboard-card {
+  min-height: 10.25rem;
+  padding: 1.25rem;
+}
+
+.metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #212529;
+}
+
+.metric-label {
+  font-size: 0.875rem;
+  color: #6c757d;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+  font-weight: 600;
+}
+
+@media (min-width: 992px) {
+  .col-lg-5ths {
+    flex: 0 0 auto;
+    width: 20%;
+  }
+  .col-lg-6ths {
+    flex: 0 0 auto;
+    width: 16.66666667%;
+  }
+}
+
+@media (max-width: 1399.98px) {
+  .supervisor-metric-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 991.98px) {
+  .supervisor-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575.98px) {
+  .supervisor-metric-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.border-bottom-light {
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.tracking-widest {
+  letter-spacing: 0.1em;
+}
+
+.tracking-wider {
+  letter-spacing: 0.05em;
+}
+
+.tracking-tight {
+  letter-spacing: -0.025em;
+}
+
+/* Tailwind replacement classes */
+.rounded-3xl {
+  border-radius: 1.5rem;
+}
+
+.rounded-2xl {
+  border-radius: 1rem;
+}
+
+.bg-slate-900 {
+  background-color: #0f172a;
+}
+
+.border-slate-200 {
+  border-color: #e2e8f0;
+}
+
+.border-slate-800 {
+  border-color: #1e293b;
+}
+
+.text-slate-700 {
+  color: #334155;
+}
+
+.text-slate-200 {
+  color: #e2e8f0;
+}
+
+.text-slate-400 {
+  color: #94a3b8;
+}
+
+.text-slate-600 {
+  color: #475569;
+}
+
+.rotate-180 {
+  transform: rotate(180deg);
+}
+
+.hover-bg-light:hover {
+  background-color: #f8f9fa;
+}
+
+.transition-all {
+  transition: all 0.2s ease-in-out;
+}
+
+.animate-in {
+  animation-duration: 100ms;
+}
+
+.fade-in {
+  animation-name: fadeIn;
+}
+
+.zoom-in-95 {
+  animation-name: zoomIn95;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes zoomIn95 {
+  from { transform: scale(0.95); }
+  to { transform: scale(1); }
+}
+
+.navbar {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
+}
+
+.card-header {
+  border-bottom: none !important;
+}
+
+.btn-primary {
+  background-color: var(--gei-blue);
+  border-color: var(--gei-blue);
+  font-weight: 600;
+  padding: 0.5rem 1.5rem;
+}
+
+.btn-primary:hover {
+  background-color: var(--gei-blue-dark);
+  border-color: var(--gei-blue-dark);
+}
+
+.table thead th {
+  font-weight: 700;
+  color: #8898aa;
+}
+
+.projection-parent-row > td {
+  background-color: #ffffff;
+  border-bottom-color: #d7dde3;
+}
+
+.projection-week-row > td {
+  background-color: #f4f7fa;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.projection-week-row:hover > td {
+  background-color: #eef4f8;
+}
+
+.projection-week-gutter {
+  position: relative;
+  background:
+    linear-gradient(to right, #0b5e8e 0, #0b5e8e 4px, #f4f7fa 4px) !important;
+}
+
+.projection-week-row:hover .projection-week-gutter {
+  background:
+    linear-gradient(to right, #0b5e8e 0, #0b5e8e 4px, #eef4f8 4px) !important;
+}
+
+.projection-week-label {
+  padding-left: 1.75rem !important;
+}
+
+.projection-week-label .fw-bold {
+  font-size: 0.95rem;
+}

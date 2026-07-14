@@ -1,0 +1,160 @@
+Build a production-quality web application for interactive timesheet analytics.
+
+Project goal:
+Create an app where a user can upload exported timesheet/worklog files and explore analytics at three levels:
+1. Branch-wide / organization-wide statistics and charts
+2. Personal statistics and charts for an individual employee
+3. Supervisor/team statistics and charts using a separate supervisor-chain mapping file
+
+Core requirements:
+- Use a modern TypeScript stack.
+- Prefer Next.js with App Router for the frontend and API routes/server actions where appropriate.
+- Use React, TypeScript, Tailwind, and a charting library like Recharts.
+- Use a robust table/data-query layer so the application does not hardcode dashboards. The app should support generic querying over uploaded data.
+- The app must be structured so an AI assistant can later drive the query layer and dynamically choose analyses and visualizations.
+
+Data inputs:
+1. Timesheet export upload
+   - Users will upload one or more timesheet/worklog exports, likely Excel and/or CSV.
+   - The timesheet file should be parsed and normalized into a canonical internal schema.
+   - Build the parser so the column mapping is configurable and easy to extend.
+   - Detect and report missing required columns gracefully.
+
+2. Supervisor chain upload
+   - Users will separately upload a supervisor hierarchy / org mapping file.
+   - This file should map employee identity to supervisor, and ideally support multiple levels if available.
+   - The app should merge this mapping with the timesheet data so team and supervisor analytics can be computed.
+
+Functional requirements:
+- Upload page with drag-and-drop support for:
+  - timesheet export file(s)
+  - supervisor chain file
+- Data normalization pipeline:
+  - infer column mappings where possible
+  - allow manual mapping override if inference is uncertain
+  - normalize dates, employee names/IDs, project/client fields, hours, cost/effort, rates, billable flags, organization fields, and manager fields
+- Persist uploaded session data locally for now (browser storage or local app state is fine); keep architecture ready for future backend persistence
+- Build a generic query engine over the normalized dataset with support for:
+  - filters
+  - group by
+  - metrics
+  - sorting
+  - date range filtering
+- Metrics should include at minimum:
+  - total hours
+  - total effort/cost if available
+  - average rate if available
+  - billable percentage
+  - employee count
+  - project count
+  - entry count
+- Grouping dimensions should include at minimum:
+  - employee
+  - supervisor
+  - branch / task organization
+  - working organization
+  - project
+  - client
+  - week
+  - month
+  - billable status
+
+Analytics views:
+Each view should be able to filter for last week, specific months, year to date, month to date, one full year back, and custom date ranges.
+1. Executive / branch dashboard
+   - total hours
+   - total cost/effort
+   - billable vs non-billable
+   - branch/org comparisons
+   - top projects
+   - top clients
+   - trend over time
+
+2. Personal dashboard
+   - employee selector
+   - total hours, billable %, total effort
+   - trend over time
+   - project mix
+   - client mix
+   - comparison to branch/team averages where possible
+
+3. Supervisor/team dashboard
+   - supervisor selector
+   - direct and rolled-up team metrics if hierarchy supports it
+   - team members
+   - total hours and cost
+   - billable %
+   - trend over time
+   - top projects/clients for the team
+   - comparison across supervisors
+
+AI-ready architecture requirements:
+- Do not hardcode all analytics as separate bespoke functions.
+- Build a reusable query layer such as:
+  queryData({
+    groupBy,
+    metrics,
+    filters,
+    timeRange,
+    sort,
+    limit
+  })
+- Build a visualization-spec layer such as:
+  renderChart({
+    chartType,
+    xField,
+    yField,
+    series,
+    formatting
+  })
+- Keep the architecture ready for a future agent integration where the AI decides what query to run and what chart to render.
+
+UX requirements:
+- Clean dashboard UI
+- Filter sidebar or query controls
+- At least these chart types:
+  - bar
+  - line
+  - pie/donut
+  - table
+- Sensible empty states, loading states, and error states
+- Show detected schema and normalization summary after upload
+- Show data quality warnings, such as missing supervisor mappings or ambiguous employee matches
+
+Implementation details:
+- Create a clear project structure with components, lib, types, parsing, query engine, and dashboard modules.
+- Add strong TypeScript typing throughout.
+- Add sample seed/demo data support so the app can run even before uploads.
+- Add utility functions for date bucketing by day/week/month.
+- Add unit tests for the normalization and query logic.
+- Add a README with:
+  - setup instructions
+  - how to run
+  - expected file formats
+  - how supervisor-chain mapping works
+  - where to extend metrics and dimensions
+
+Important constraints:
+- The application must be resilient to imperfect source files.
+- Employee identity may not match perfectly across files, so implement a strategy for matching by employee ID when available, otherwise fallback to normalized employee name matching.
+- Make supervisor-chain merge behavior explicit and debuggable.
+- Keep business logic separated from UI logic.
+- Keep the codebase easy for an AI coding agent to continue extending.
+
+Execution plan:
+1. Scaffold the project
+2. Implement data types and normalization pipeline
+3. Implement file upload and parsing for CSV/XLSX
+4. Implement supervisor-chain merge logic
+5. Implement generic query engine
+6. Implement dashboard pages/components
+7. Add demo dataset and tests
+8. Run the app and fix build/test issues
+9. Update README
+
+While working:
+- Show me the project plan first
+- Then implement in small, reviewable steps
+- Run the build/tests after major milestones
+- Explain any assumptions about the uploaded file schema
+- Prefer maintainable code over shortcuts

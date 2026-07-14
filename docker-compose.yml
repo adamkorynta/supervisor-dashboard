@@ -1,0 +1,8 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gei-internal/davis-supervisor-dashboard:latest
+    ports:
+      - "3005:3000"
