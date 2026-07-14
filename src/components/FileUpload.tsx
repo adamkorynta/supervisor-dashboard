@@ -284,6 +284,7 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       entries: finalEntries,
       supervisors: effectiveSupervisors,
       projections,
+      projectionVersions: data?.projectionVersions || [],
       projects,
       unmatchedEmployees,
       rawTimesheetHeaders: timesheetHeaders.length > 0 ? timesheetHeaders : data?.rawTimesheetHeaders || [],
@@ -306,7 +307,13 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(finalData),
+        body: JSON.stringify({
+          ...finalData,
+          uploadContext: {
+            projectionsUploaded: Boolean(projectionData),
+            projectionUploadedAt: projectionData ? new Date().toISOString() : undefined
+          }
+        }),
       });
       
       console.log(`[FileUpload] Server response status: ${response.status} ${response.statusText}`);
@@ -317,8 +324,18 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
         throw new Error(`Server responded with ${response.status}: ${errorText}`);
       }
       
+      const saveResult = await response.json();
       setUploadProgress({ percent: 100, stage: 'Completed!' });
-      setStatus({ type: 'success', message: `Data processed successfully. Saved ${projections.length} projection rows.` });
+      const duplicateText = saveResult.duplicateTimesheetRows
+        ? ` ${saveResult.duplicateTimesheetRows.toLocaleString()} duplicate timesheet rows were recognized and skipped.`
+        : '';
+      const projectionText = saveResult.projectionVersionId
+        ? ` Projection version ${saveResult.projectionVersionId} saved with ${projections.length.toLocaleString()} rows.`
+        : ` Latest projection rows retained: ${projections.length.toLocaleString()}.`;
+      setStatus({
+        type: 'success',
+        message: `Data processed successfully. Inserted ${Number(saveResult.insertedTimesheetRows || 0).toLocaleString()} new timesheet rows.${duplicateText}${projectionText}`
+      });
       
       if (onSuccess) {
         setTimeout(onSuccess, 800);

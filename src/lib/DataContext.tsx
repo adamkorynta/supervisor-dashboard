@@ -48,7 +48,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             projections: (result.projections || [])
               .map((p: any) => ({
                 ...p,
-                date: new Date(p.date)
+                date: new Date(p.date),
+                projectionUploadedAt: p.projectionUploadedAt ? new Date(p.projectionUploadedAt) : undefined
               }))
               .filter((p: any) =>
                 p.date instanceof Date &&
@@ -57,6 +58,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 p.date.getFullYear() <= 2100 &&
                 /[a-z]/i.test(String(p.employeeName || ''))
               ),
+            projectionVersions: (result.projectionVersions || []).map((version: any) => ({
+              ...version,
+              uploadedAt: new Date(version.uploadedAt),
+              projections: (version.projections || []).map((p: any) => ({
+                ...p,
+                date: new Date(p.date),
+                projectionUploadedAt: p.projectionUploadedAt ? new Date(p.projectionUploadedAt) : undefined
+              }))
+            })),
             projects: (result.projects || []).map((p: any) => ({
               ...p,
               startDate: p.startDate ? new Date(p.startDate) : undefined,

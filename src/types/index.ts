@@ -51,6 +51,19 @@ export interface ProjectionEntry {
   otherOverheadHours?: number;
   totalProjectedHours?: number;
   projectedHours: number;
+  projectionVersionId?: string;
+  projectionUploadedAt?: Date | string;
+  forecastHorizonWeeks?: number;
+}
+
+export interface ProjectionVersion {
+  id: string;
+  uploadedAt: Date | string;
+  label: string;
+  rowCount: number;
+  rawProjectionHeaders: string[];
+  horizonsAvailable: number[];
+  projections: ProjectionEntry[];
 }
 
 export interface ProjectTaskSnapshot {
@@ -84,6 +97,7 @@ export interface NormalizedData {
   entries: TimesheetEntry[];
   supervisors: SupervisorMapping[];
   projections: ProjectionEntry[];
+  projectionVersions?: ProjectionVersion[];
   projects: ProjectSnapshot[];
   unmatchedEmployees: string[];
   rawTimesheetHeaders: string[];

@@ -63,6 +63,14 @@ type ProjectionRollupRow = Omit<ProjectionComparisonRow, 'key' | 'postingDate'> 
   weeklyRows: ProjectionComparisonRow[];
 };
 
+type ForecastErrorBand = {
+  horizon: number;
+  samples: number;
+  averageAbsoluteError: number | null;
+  lowError: number | null;
+  highError: number | null;
+};
+
 const percent = (value: number | null | undefined) => (
   value === null || value === undefined || !Number.isFinite(value) ? '-' : `${value.toFixed(1)}%`
 );
@@ -146,6 +154,16 @@ const getProjectedUtilizationBillableHours = (row: Pick<ProjectionComparisonRow,
   const denominator = getProjectedUtilizationDenominator(row);
   if (denominator <= 0) return 0;
   return Math.min(Math.max(row.projectedBillableHours, 0), denominator);
+};
+
+const getProjectionTotalHours = (projection: ProjectionEntry) =>
+  projection.totalProjectedHours ?? (projection.billableHours ?? projection.projectedHours ?? 0) + (projection.overheadHours ?? 0);
+
+const getProjectionUtilization = (projection: ProjectionEntry) => {
+  const total = getProjectionTotalHours(projection);
+  if (total <= 0) return null;
+  const billable = projection.billableHours ?? projection.projectedHours ?? 0;
+  return (Math.min(Math.max(billable, 0), total) / total) * 100;
 };
 
 export default function ProjectionsDashboard() {
@@ -441,6 +459,58 @@ export default function ProjectionsDashboard() {
     });
   }, [comparisonRows]);
 
+  const forecastErrorBands = useMemo<ForecastErrorBand[]>(() => {
+    const actualByKey = new Map<string, { billable: number; total: number }>();
+
+    data?.entries.forEach(entry => {
+      const key = projectionWeekKey(entry.employeeName, entry.date);
+      const bucket = actualByKey.get(key) || { billable: 0, total: 0 };
+      bucket.total += entry.hours;
+      if (entry.billable) bucket.billable += entry.hours;
+      actualByKey.set(key, bucket);
+    });
+
+    const errorsByHorizon = new Map<number, number[]>();
+    [1, 2, 3, 4].forEach(horizon => errorsByHorizon.set(horizon, []));
+
+    (data?.projectionVersions || []).forEach(version => {
+      version.projections.forEach(projection => {
+        const horizon = projection.forecastHorizonWeeks;
+        if (!horizon || horizon < 1 || horizon > 4) return;
+
+        const projectedUtilization = getProjectionUtilization(projection);
+        const actual = actualByKey.get(projectionWeekKey(projection.employeeName, projection.date));
+        if (projectedUtilization === null || !actual || actual.total <= 0) return;
+
+        const actualUtilization = (actual.billable / actual.total) * 100;
+        const errors = errorsByHorizon.get(horizon) || [];
+        errors.push(actualUtilization - projectedUtilization);
+        errorsByHorizon.set(horizon, errors);
+      });
+    });
+
+    return [1, 2, 3, 4].map(horizon => {
+      const errors = errorsByHorizon.get(horizon) || [];
+      if (errors.length === 0) {
+        return {
+          horizon,
+          samples: 0,
+          averageAbsoluteError: null,
+          lowError: null,
+          highError: null,
+        };
+      }
+
+      return {
+        horizon,
+        samples: errors.length,
+        averageAbsoluteError: errors.reduce((sum, error) => sum + Math.abs(error), 0) / errors.length,
+        lowError: Math.min(...errors),
+        highError: Math.max(...errors),
+      };
+    });
+  }, [data]);
+
   const actualUtilization = aggregate.actualTotalHours > 0
     ? (aggregate.actualBillableHours / aggregate.actualTotalHours) * 100
     : null;
@@ -535,6 +605,50 @@ export default function ProjectionsDashboard() {
             icon={<CircleAlert size={20} />}
             color="text-info"
           />
+        </div>
+      </div>
+
+      <div className="card border-0 shadow-sm overflow-hidden mb-4">
+        <div className="card-header bg-white border-bottom-0 pt-4 px-4 d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-2">
+          <div>
+            <h6 className="metric-label mb-1">Forecast Error Band</h6>
+            <div className="text-muted small">
+              Projection revisions retained: {(data.projectionVersions || []).length.toLocaleString()}
+            </div>
+          </div>
+          <div className="text-muted small fw-medium">
+            Actuals are compared to the projection version saved 1-4 weeks ahead
+          </div>
+        </div>
+        <div className="card-body p-0">
+          <div className="table-responsive">
+            <table className="table align-middle mb-0">
+              <thead className="table-light">
+                <tr>
+                  <th className="px-4 py-3">Forecast Horizon</th>
+                  <th className="px-4 py-3 text-end">Matched Employee-Weeks</th>
+                  <th className="px-4 py-3 text-end">Avg. Absolute Error</th>
+                  <th className="px-4 py-3 text-end">Observed Error Band</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forecastErrorBands.map(band => (
+                  <tr key={band.horizon}>
+                    <td className="px-4 py-3 fw-bold">{band.horizon} week{band.horizon === 1 ? '' : 's'} out</td>
+                    <td className="px-4 py-3 text-end font-monospace">{band.samples.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-end font-monospace">
+                      {band.averageAbsoluteError === null ? 'Pending history' : signedPercent(band.averageAbsoluteError).replace('+', '')}
+                    </td>
+                    <td className="px-4 py-3 text-end font-monospace">
+                      {band.lowError === null || band.highError === null
+                        ? 'Pending history'
+                        : `${signedPercent(band.lowError)} to ${signedPercent(band.highError)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
