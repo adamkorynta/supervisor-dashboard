@@ -13,6 +13,7 @@ import { queryData } from '@/lib/queryEngine';
 import {
   buildWeeklyUtilizationTrend,
   getFridayPostingDate,
+  getLatestCompletedDataDate,
   getWeightedTargetForEntries,
   getWeightedTargetForProjections,
   normalizeTargetPercentage
@@ -132,6 +133,14 @@ export default function SupervisorDashboard() {
 
     return filteredEntries.filter((e: any) => teamMemberNames.has(e.employeeName));
   }, [data, teamMemberNames, timeRange]);
+
+  const latestTeamDataDate = useMemo(() => {
+    if (!data || teamMemberNames.size === 0) return null;
+
+    return getLatestCompletedDataDate(
+      data.entries.filter(entry => teamMemberNames.has(entry.employeeName))
+    );
+  }, [data, teamMemberNames]);
 
   const teamMembers = useMemo(() => {
     if (!data || teamMemberNames.size === 0) return [];
@@ -271,8 +280,10 @@ export default function SupervisorDashboard() {
     const teamProjections = (data?.projections || []).filter(projection => teamMemberNames.has(projection.employeeName));
     if (teamEntries.length === 0 && teamProjections.length === 0) return [];
 
-    return buildWeeklyUtilizationTrend(teamEntries, teamProjections, timeRange, employeeTargets);
-  }, [teamEntries, data?.projections, teamMemberNames, timeRange, employeeTargets]);
+    return buildWeeklyUtilizationTrend(teamEntries, teamProjections, timeRange, employeeTargets, {
+      latestDataDate: latestTeamDataDate
+    });
+  }, [teamEntries, data?.projections, teamMemberNames, timeRange, employeeTargets, latestTeamDataDate]);
 
   if (!data) return null;
 

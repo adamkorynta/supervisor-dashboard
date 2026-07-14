@@ -5,8 +5,17 @@
  * Source may not be released without written approval from HEC
  */
 
-import { endOfDay, startOfDay } from 'date-fns';
+import { addWeeks, endOfDay, startOfDay } from 'date-fns';
 import { ProjectionEntry, TimesheetEntry } from '@/types';
+
+export type WeeklyUtilizationTrendRow = {
+  date: string;
+  revisedUtilization?: number | null;
+  target: number;
+  projection: number | null;
+  trendline?: number;
+  originalEntries?: TimesheetEntry[];
+};
 
 export function getFridayPostingDate(date: Date) {
   const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -48,6 +57,23 @@ export function getProjectionTotalHours(projection: ProjectionEntry) {
   return projection.totalProjectedHours ?? billable + overhead;
 }
 
+export function getLastCompletedPostingDate(reference = new Date()) {
+  const localRef = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  const diffToFriday = (localRef.getDay() + 2) % 7;
+  localRef.setDate(localRef.getDate() - diffToFriday);
+  return localRef;
+}
+
+export function getLatestCompletedDataDate(entries: TimesheetEntry[], reference = new Date()) {
+  const lastCompletedPostingTime = endOfDay(getLastCompletedPostingDate(reference)).getTime();
+  const completedTimes = entries
+    .map(entry => getFridayPostingDate(entry.postingDate || entry.date).getTime())
+    .filter(time => time <= lastCompletedPostingTime);
+
+  if (completedTimes.length === 0) return null;
+  return new Date(Math.max(...completedTimes));
+}
+
 export function getWeightedTargetForEntries(entries: TimesheetEntry[], employeeTargets: Map<string, number>) {
   const weighted = entries.reduce((acc, entry) => {
     const target = employeeTargets.get(entry.employeeName);
@@ -78,12 +104,35 @@ export function getWeightedTargetForProjections(
   return weighted.weight > 0 ? weighted.weightedTarget / weighted.weight : null;
 }
 
+function getProjectionEndTime(
+  timeRange: { start: Date; end: Date } | null,
+  latestDataDate?: Date | null,
+  projectionWeeksAfterLatest = 4
+) {
+  if (!timeRange) return null;
+
+  const rangeStartTime = startOfDay(timeRange.start).getTime();
+  const rangeEndTime = endOfDay(timeRange.end).getTime();
+  if (!latestDataDate) return rangeEndTime;
+
+  const latestTime = latestDataDate.getTime();
+  const includesLatestData = latestTime >= rangeStartTime && latestTime <= rangeEndTime;
+  if (!includesLatestData) return rangeEndTime;
+
+  const latestProjectionWeek = addWeeks(getFridayPostingDate(latestDataDate), projectionWeeksAfterLatest);
+  return Math.max(rangeEndTime, endOfDay(latestProjectionWeek).getTime());
+}
+
 export function buildWeeklyUtilizationTrend(
   entries: TimesheetEntry[],
   projections: ProjectionEntry[],
   timeRange: { start: Date; end: Date } | null,
-  employeeTargets: Map<string, number>
-) {
+  employeeTargets: Map<string, number>,
+  options: {
+    latestDataDate?: Date | null;
+    projectionWeeksAfterLatest?: number;
+  } = {}
+): WeeklyUtilizationTrendRow[] {
   const buckets = new Map<string, {
     date: Date;
     entries: TimesheetEntry[];
@@ -91,6 +140,11 @@ export function buildWeeklyUtilizationTrend(
   }>();
   const startTime = timeRange ? startOfDay(timeRange.start).getTime() : null;
   const endTime = timeRange ? endOfDay(timeRange.end).getTime() : null;
+  const projectionEndTime = getProjectionEndTime(
+    timeRange,
+    options.latestDataDate,
+    options.projectionWeeksAfterLatest
+  );
 
   const ensureBucket = (postingDate: Date) => {
     const friday = getFridayPostingDate(postingDate);
@@ -113,7 +167,7 @@ export function buildWeeklyUtilizationTrend(
   projections.forEach(projection => {
     const postingDate = getFridayPostingDate(projection.date);
     const postingTime = postingDate.getTime();
-    if ((startTime !== null && postingTime < startTime) || (endTime !== null && postingTime > endTime)) return;
+    if ((startTime !== null && postingTime < startTime) || (projectionEndTime !== null && postingTime > projectionEndTime)) return;
     ensureBucket(postingDate).projections.push(projection);
   });
 

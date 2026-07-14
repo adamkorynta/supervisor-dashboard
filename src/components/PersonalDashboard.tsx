@@ -10,10 +10,15 @@
 import React, { useMemo, useState } from 'react';
 import { useData } from '@/lib/DataContext';
 import { queryData } from '@/lib/queryEngine';
+import {
+  buildWeeklyUtilizationTrend,
+  getLatestCompletedDataDate,
+  normalizeTargetPercentage
+} from '@/lib/dashboardMetrics';
 import AnalyticsChart from '@/components/AnalyticsChart';
 import DrillDownModal from '@/components/DrillDownModal';
 import { User, Clock, Briefcase, TrendingUp, AlertCircle, List } from 'lucide-react';
-import { formatHours, TimesheetEntry, getCategoryColor, ProjectionEntry } from '@/types';
+import { formatHours, TimesheetEntry, getCategoryColor } from '@/types';
 import { startOfDay, endOfDay } from 'date-fns';
 
 const WORK_DISTRIBUTION_BUCKETS = [
@@ -25,106 +30,11 @@ const WORK_DISTRIBUTION_BUCKETS = [
 
 type WorkDistributionBucket = typeof WORK_DISTRIBUTION_BUCKETS[number];
 
-type UtilizationTrendRow = {
-  date: string;
-  revisedUtilization?: number | null;
-  target: number;
-  projection: number | null;
-  trendline?: number;
-  originalEntries?: TimesheetEntry[];
-};
-
 function getWorkDistributionBucket(entry: TimesheetEntry): WorkDistributionBucket {
   if (entry.category === 'PPL' || entry.category === 'Holiday') return 'PPL/Holiday';
   if (entry.category === 'BizDev') return 'Business Development';
   if (entry.billable || entry.category === 'Billable') return 'Billable';
   return 'Admin';
-}
-
-function getFridayPostingDate(date: Date) {
-  const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = localDate.getDay();
-  const daysToFriday = (5 - day + 7) % 7;
-  localDate.setDate(localDate.getDate() + daysToFriday);
-  return localDate;
-}
-
-function dateKey(date: Date) {
-  return date.toISOString().split('T')[0];
-}
-
-function getProjectionBillablePercentage(projections: ProjectionEntry[]) {
-  const totals = projections.reduce((acc, projection) => {
-    const billable = projection.billableHours ?? projection.projectedHours ?? 0;
-    const overhead = projection.overheadHours ?? 0;
-    const scheduledTotal = billable + overhead;
-    const total = projection.totalProjectedHours && projection.totalProjectedHours > 0
-      ? projection.totalProjectedHours
-      : scheduledTotal;
-    acc.billable += Math.min(Math.max(billable, 0), total);
-    acc.total += total;
-    return acc;
-  }, { billable: 0, total: 0 });
-
-  if (totals.total > 0) return (totals.billable / totals.total) * 100;
-  return null;
-}
-
-function buildWeeklyUtilizationTrend(
-  entries: TimesheetEntry[],
-  projections: ProjectionEntry[],
-  timeRange: { start: Date; end: Date } | null,
-  employeeTarget: number | null
-): UtilizationTrendRow[] {
-  const buckets = new Map<string, {
-    date: Date;
-    entries: TimesheetEntry[];
-    projections: ProjectionEntry[];
-  }>();
-  const startTime = timeRange ? startOfDay(timeRange.start).getTime() : null;
-  const endTime = timeRange ? endOfDay(timeRange.end).getTime() : null;
-
-  const ensureBucket = (postingDate: Date) => {
-    const friday = getFridayPostingDate(postingDate);
-    const key = dateKey(friday);
-    const existing = buckets.get(key);
-    if (existing) return existing;
-
-    const bucket = { date: friday, entries: [], projections: [] };
-    buckets.set(key, bucket);
-    return bucket;
-  };
-
-  entries.forEach(entry => {
-    const postingDate = entry.postingDate || entry.date;
-    const postingTime = postingDate.getTime();
-    if ((startTime !== null && postingTime < startTime) || (endTime !== null && postingTime > endTime)) return;
-    ensureBucket(postingDate).entries.push(entry);
-  });
-
-  projections.forEach(projection => {
-    const postingDate = getFridayPostingDate(projection.date);
-    const postingTime = postingDate.getTime();
-    if ((startTime !== null && postingTime < startTime) || (endTime !== null && postingTime > endTime)) return;
-    ensureBucket(postingDate).projections.push(projection);
-  });
-
-  return Array.from(buckets.values())
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
-    .map(bucket => {
-      const totalHours = bucket.entries.reduce((sum, entry) => sum + entry.hours, 0);
-      const revisedHours = bucket.entries
-        .filter(entry => entry.billable || entry.category === 'Corporate')
-        .reduce((sum, entry) => sum + entry.hours, 0);
-
-      return {
-        date: dateKey(bucket.date),
-        revisedUtilization: totalHours > 0 ? (revisedHours / totalHours) * 100 : null,
-        target: employeeTarget || 0,
-        projection: getProjectionBillablePercentage(bucket.projections),
-        originalEntries: bucket.entries
-      };
-    });
 }
 
 export default function PersonalDashboard() {
@@ -183,6 +93,10 @@ export default function PersonalDashboard() {
     });
   }, [personalEntries, timeRange]);
 
+  const latestPersonalDataDate = useMemo(() => {
+    return getLatestCompletedDataDate(personalEntries);
+  }, [personalEntries]);
+
   const handleViewAllRecords = () => {
     setDrillDownEntries(filteredEntriesByTime);
     setIsModalOpen(true);
@@ -200,6 +114,13 @@ export default function PersonalDashboard() {
     if (!data || !selectedEmployee) return null;
     return data.supervisors.find(s => s.employeeName === selectedEmployee)?.utilizationGoal || null;
   }, [data, selectedEmployee]);
+
+  const employeeTargets = useMemo(() => {
+    const targets = new Map<string, number>();
+    const target = normalizeTargetPercentage(employeeTarget);
+    if (selectedEmployee && target !== null) targets.set(selectedEmployee, target);
+    return targets;
+  }, [employeeTarget, selectedEmployee]);
 
   const utilizationStatus = useMemo(() => {
     if (!metrics || employeeTarget === null) return { color: 'text-info', label: '' };
@@ -266,11 +187,15 @@ export default function PersonalDashboard() {
     const employeeProjections = (data?.projections || []).filter(p => p.employeeName === selectedEmployee);
     if (personalEntries.length === 0 && employeeProjections.length === 0) return { utilization: [] };
 
-    const utilizationTrend = buildWeeklyUtilizationTrend(personalEntries, employeeProjections, timeRange, employeeTarget);
+    const utilizationTrend = buildWeeklyUtilizationTrend(personalEntries, employeeProjections, timeRange, employeeTargets, {
+      latestDataDate: latestPersonalDataDate
+    });
 
     if (utilizationTrend.length === 0 && employeeProjections.length > 0) {
       return {
-        utilization: buildWeeklyUtilizationTrend([], employeeProjections, timeRange, employeeTarget)
+        utilization: buildWeeklyUtilizationTrend([], employeeProjections, timeRange, employeeTargets, {
+          latestDataDate: latestPersonalDataDate
+        })
       };
     }
 
@@ -301,33 +226,10 @@ export default function PersonalDashboard() {
         d.trendline = slope * i + intercept;
       });
 
-      const lastPoint = trendlineData[trendlineData.length - 1];
-      const lastDate = new Date(lastPoint.date);
-
-      for (let i = 1; i <= 4; i++) {
-        const futureDate = new Date(lastDate);
-        futureDate.setDate(lastDate.getDate() + (i * 7));
-
-        const futureKey = dateKey(getFridayPostingDate(futureDate));
-        if (trendlineData.some(row => row.date === futureKey)) continue;
-
-        const futureProjections = employeeProjections.filter(projection =>
-          dateKey(getFridayPostingDate(projection.date)) === futureKey
-        );
-
-        const x = trendlineData.length;
-
-        trendlineData.push({
-          date: futureKey,
-          trendline: slope * x + intercept,
-          target: employeeTarget || 0,
-          projection: getProjectionBillablePercentage(futureProjections)
-        });
-      }
     }
 
     return { utilization: trendlineData };
-  }, [personalEntries, data?.projections, selectedEmployee, timeRange, employeeTarget]);
+  }, [personalEntries, data?.projections, selectedEmployee, timeRange, employeeTargets, latestPersonalDataDate]);
 
   if (!data) return null;
 
