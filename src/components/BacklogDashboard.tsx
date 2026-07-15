@@ -8,7 +8,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Clock, Info, Calendar } from 'lucide-react';
+import { Clock, Info, Calendar, Filter } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -33,6 +33,27 @@ export default function BacklogDashboard() {
   // Local date range state
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  
+  // Track visibility of individual task lines: projectCode -> taskId -> boolean
+  const [visibleTasks, setVisibleTasks] = useState<Record<string, Record<string, boolean>>>({});
+
+  const toggleTask = (projectCode: string, taskId: string) => {
+    setVisibleTasks(prev => {
+      const projectTasks = prev[projectCode] || {};
+      return {
+        ...prev,
+        [projectCode]: {
+          ...projectTasks,
+          [taskId]: !projectTasks[taskId]
+        }
+      };
+    });
+  };
+
+  const taskColors = [
+    '#6610f2', '#6f42c1', '#d63384', '#fd7e14', '#ffc107', '#20c997', '#0dcaf0',
+    '#adb5bd', '#007bff', '#6c757d', '#28a745', '#17a2b8', '#ffc107', '#dc3545'
+  ];
 
   useEffect(() => {
     if (!data?.projectSchedules || data.projectSchedules.length === 0) {
@@ -240,6 +261,25 @@ export default function BacklogDashboard() {
                         activeDot={{ r: 5 }}
                         connectNulls
                       />
+                      {curve.tasks.map((task, idx) => {
+                        const taskKey = `task_${task.taskId || task.taskName}`;
+                        const isVisible = visibleTasks[curve.projectCode || curve.projectName]?.[task.taskId || task.taskName];
+                        if (!isVisible) return null;
+                        
+                        return (
+                          <Line
+                            key={taskKey}
+                            name={task.taskName}
+                            type="monotone"
+                            dataKey={taskKey}
+                            stroke={taskColors[idx % taskColors.length]}
+                            strokeWidth={2}
+                            strokeDasharray="3 3"
+                            dot={false}
+                            connectNulls
+                          />
+                        );
+                      })}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -250,6 +290,43 @@ export default function BacklogDashboard() {
                     <div className="small text-dark">
                       <strong>Burn Rate Note:</strong> The backlog curve represents a linear drawdown of remaining labor dollars to zero by the project end date. The average monthly burn rate ({formatCurrency(curve.burnRate)}) is derived from historical timesheet data for this project.
                     </div>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="d-flex align-items-center mb-3">
+                    <Filter size={16} className="me-2 text-muted" />
+                    <span className="small fw-bold text-uppercase text-muted">Task Backlog Overlays</span>
+                  </div>
+                  <div className="d-flex flex-wrap gap-2">
+                    {curve.tasks.map((task, idx) => {
+                      const taskId = task.taskId || task.taskName;
+                      const isVisible = visibleTasks[curve.projectCode || curve.projectName]?.[taskId];
+                      const color = taskColors[idx % taskColors.length];
+                      
+                      return (
+                        <button
+                          key={taskId}
+                          onClick={() => toggleTask(curve.projectCode || curve.projectName, taskId)}
+                          className={`btn btn-sm rounded-pill px-3 py-1 d-flex align-items-center gap-2 transition-all ${
+                            isVisible 
+                              ? 'btn-outline-dark border-2' 
+                              : 'btn-light border text-muted'
+                          }`}
+                          style={isVisible ? { borderColor: color, color: color } : {}}
+                        >
+                          <div 
+                            className="rounded-circle" 
+                            style={{ 
+                              width: '8px', 
+                              height: '8px', 
+                              backgroundColor: isVisible ? color : '#dee2e6' 
+                            }} 
+                          />
+                          {task.taskName}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

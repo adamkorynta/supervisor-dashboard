@@ -17,11 +17,19 @@ export interface BacklogCurve {
   finishDate: Date;
   startDate: Date;
   burnRate: number; // monthly or weekly burn rate based on timesheet history
+  tasks: {
+    taskId: string;
+    taskName: string;
+    cost: number;
+    startDate: Date;
+    endDate: Date;
+  }[];
   series: {
     date: string;
     backlogRemaining?: number;
     actualCost?: number;
     cumulativeActualCost?: number;
+    [taskBacklogKey: string]: number | string | undefined;
   }[];
 }
 
@@ -686,8 +694,30 @@ export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: Ti
       }
     }
 
-    // Sort series by date
     series.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Calculate individual task backlog curves
+    projectSchedules.forEach(task => {
+      const taskFinishDate = task.endDate;
+      const taskStartDate = task.startDate;
+      const taskTotalDays = differenceInCalendarDays(taskFinishDate, taskStartDate);
+      const taskKey = `task_${task.taskId || task.taskName}`;
+
+      series.forEach(point => {
+        const pointDate = new Date(point.date);
+        if (pointDate < taskStartDate) {
+          point[taskKey] = task.cost;
+        } else if (pointDate > taskFinishDate) {
+          point[taskKey] = 0;
+        } else if (taskTotalDays > 0) {
+          const daysFromStart = differenceInCalendarDays(pointDate, taskStartDate);
+          const ratio = Math.max(0, 1 - (daysFromStart / taskTotalDays));
+          point[taskKey] = task.cost * ratio;
+        } else {
+          point[taskKey] = 0;
+        }
+      });
+    });
 
     curves.push({
       projectCode: projectCode || '',
@@ -696,6 +726,13 @@ export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: Ti
       finishDate,
       startDate,
       burnRate: monthlyBurnRate,
+      tasks: projectSchedules.map(s => ({
+        taskId: s.taskId,
+        taskName: s.taskName,
+        cost: s.cost,
+        startDate: s.startDate,
+        endDate: s.endDate
+      })),
       series
     });
   });

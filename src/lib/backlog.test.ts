@@ -86,6 +86,16 @@ describe('Backlog Curve Generation', () => {
     
     // Burn rate should be calculated
     expect(curves[0].burnRate).toBeGreaterThan(0);
+
+    // Check for task-level data
+    expect(curves[0].tasks).toHaveLength(1);
+    expect(curves[0].tasks[0].taskName).toBe('Design');
+    
+    const taskKey = 'task_T1';
+    const pointWithTaskData = curves[0].series.find(p => p[taskKey] !== undefined);
+    expect(pointWithTaskData).toBeDefined();
+    expect(pointWithTaskData![taskKey]).toBeGreaterThan(0);
+    expect(pointWithTaskData![taskKey]).toBeLessThanOrEqual(50000);
   });
 
   it('should match projects by name when code is missing', () => {
