@@ -79,14 +79,14 @@ export default function BacklogDashboard() {
       </div>
 
       <div className="row g-4">
-        {curves.map((curve) => (
-          <div key={curve.projectCode} className="col-xl-6">
+        {curves.map((curve, idx) => (
+          <div key={curve.projectCode || `curve-${idx}`} className="col-xl-6">
             <div className="card border-0 shadow-sm rounded-3 h-100">
               <div className="card-header bg-white border-0 pt-4 px-4">
                 <div className="d-flex justify-content-between align-items-start">
                   <div>
                     <h5 className="fw-bold mb-1">{curve.projectName}</h5>
-                    <div className="small text-muted mb-0">Project Code: {curve.projectCode}</div>
+                    {curve.projectCode && <div className="small text-muted mb-0">Project Code: {curve.projectCode}</div>}
                   </div>
                   <div className="text-end">
                     <div className="badge bg-primary-subtle text-primary rounded-pill px-3 py-2">
@@ -173,7 +173,7 @@ export default function BacklogDashboard() {
 
       {curves.length === 0 && !isProcessing && (
         <div className="card border-0 shadow-sm p-5 text-center mt-4">
-          <p className="text-muted mb-0">No backlog curves generated. Ensure your schedule upload includes valid project codes that match your timesheets.</p>
+        <p className="text-muted mb-0">No backlog curves generated. Ensure your schedule upload includes valid project names or codes that match your timesheets.</p>
         </div>
       )}
     </div>

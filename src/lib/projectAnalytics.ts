@@ -583,26 +583,37 @@ function getEntryEffort(entry: TimesheetEntry): number {
  * Generates backlog curves for projects based on task schedules and timesheet history.
  */
 export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: TimesheetEntry[]): BacklogCurve[] {
-  // Group schedules by projectCode
+  // Group schedules by project identifier (prefer code, fallback to name)
   const projectMap = new Map<string, ProjectTaskSchedule[]>();
   schedules.forEach(s => {
-    const code = s.projectCode || 'Unassigned';
+    const code = s.projectCode || s.projectName || 'Unassigned';
     if (!projectMap.has(code)) projectMap.set(code, []);
     projectMap.get(code)!.push(s);
   });
 
   const curves: BacklogCurve[] = [];
 
-  projectMap.forEach((projectSchedules, projectCode) => {
+  projectMap.forEach((projectSchedules, projectIdentifier) => {
     const totalLaborRemaining = projectSchedules.reduce((sum, s) => sum + s.cost, 0);
     const finishDate = new Date(Math.max(...projectSchedules.map(s => s.endDate.getTime())));
+    const projectName = projectSchedules.find(s => s.projectName)?.projectName || projectIdentifier;
+    const projectCode = projectSchedules.find(s => s.projectCode)?.projectCode || (projectIdentifier !== projectName ? projectIdentifier : undefined);
     
     // Find project entries to calculate burn rate
     const projectEntries = entries.filter(e => {
-      if (!projectCode || projectCode === 'Unassigned') return false;
+      if (projectIdentifier === 'Unassigned') return false;
+      
       const entryCode = (e.projectCode || '').trim().toLowerCase();
       const entryProject = (e.project || '').trim().toLowerCase();
-      return entryCode === projectCode.toLowerCase() || entryProject.includes(projectCode.toLowerCase());
+      
+      const targetCode = projectCode?.toLowerCase();
+      const targetName = projectName?.toLowerCase();
+
+      if (targetCode && entryCode === targetCode) return true;
+      if (targetName && entryProject.includes(targetName)) return true;
+      if (targetCode && entryProject.includes(targetCode)) return true;
+      
+      return false;
     });
 
     // Use monthly burn rate from history
@@ -636,8 +647,8 @@ export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: Ti
     }
 
     curves.push({
-      projectCode,
-      projectName: projectCode, // Use project code as name if we don't have a better one here
+      projectCode: projectCode || '',
+      projectName,
       totalLaborRemaining,
       finishDate,
       burnRate: monthlyBurnRate,

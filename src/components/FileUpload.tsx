@@ -29,6 +29,8 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
   const [projectHeaders, setProjectHeaders] = useState<string[]>([]);
   const [scheduleData, setScheduleData] = useState<any[] | null>(null);
   const [scheduleHeaders, setScheduleHeaders] = useState<string[]>([]);
+  const [overrideProjectName, setOverrideProjectName] = useState('');
+  const [overrideProjectCode, setOverrideProjectCode] = useState('');
   const [mapping, setMapping] = useState<ColumnMapping>(DEFAULT_MAPPING);
   const [showMapping, setShowMapping] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
@@ -62,9 +64,18 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       console.log(`[FileUpload] Recovery effect - Restoring ${ (window as any).tempScheduleData.length } schedule rows from window storage`);
       setScheduleData((window as any).tempScheduleData);
       setScheduleHeaders((window as any).tempScheduleHeaders || []);
+      setOverrideProjectName((window as any).tempOverrideProjectName || '');
+      setOverrideProjectCode((window as any).tempOverrideProjectCode || '');
       setStatus({ type: 'success', message: 'Project schedules loaded. Click "Generate Analytics Dashboard" to save.' });
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).tempOverrideProjectName = overrideProjectName;
+      (window as any).tempOverrideProjectCode = overrideProjectCode;
+    }
+  }, [overrideProjectName, overrideProjectCode]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'timesheet' | 'supervisor' | 'projections' | 'projects' | 'schedules') => {
     console.log(`[FileUpload] handleFileUpload triggered for ${type}`);
@@ -151,9 +162,13 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
         if (typeof window !== 'undefined') {
           (window as any).tempScheduleData = parsedResults.data;
           (window as any).tempScheduleHeaders = parsedResults.headers;
+          (window as any).tempOverrideProjectName = '';
+          (window as any).tempOverrideProjectCode = '';
         }
         setScheduleData(parsedResults.data);
         setScheduleHeaders(parsedResults.headers);
+        setOverrideProjectName('');
+        setOverrideProjectCode('');
         setStatus({ type: 'success', message: `Project schedules uploaded with ${parsedResults.data.length} rows. Please click "Generate Analytics Dashboard" to save.` });
       }
     } catch (err) {
@@ -289,6 +304,13 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
     let projectSchedules = data?.projectSchedules || [];
     if (scheduleData) {
       projectSchedules = normalizeProjectSchedules(scheduleData);
+      if (overrideProjectName || overrideProjectCode) {
+        projectSchedules = projectSchedules.map(s => ({
+          ...s,
+          projectName: overrideProjectName || s.projectName,
+          projectCode: overrideProjectCode || s.projectCode
+        }));
+      }
     }
 
     setUploadProgress({ percent: 60, stage: 'Merging supervisor chain...' });
@@ -448,7 +470,7 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
             progress={uploadProgress?.stage.includes('project') && !uploadProgress?.stage.includes('schedule') ? uploadProgress.percent : undefined}
           />
         </div>
-        <div className="col-md-4 col-xl-3">
+        <div className={`col-md-4 col-xl-3 ${(scheduleData || !!data?.projectSchedules?.length) ? 'h-100' : ''}`}>
           <UploadCard
             title="Project Schedule"
             description="Upload task schedule (backlog curve)"
@@ -457,6 +479,36 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
             isLoaded={!!scheduleData || !!data?.projectSchedules?.length}
             progress={uploadProgress?.stage.includes('schedule') ? uploadProgress.percent : undefined}
           />
+          {(scheduleData || !!data?.projectSchedules?.length) && (
+            <div className="mt-2 p-3 bg-white rounded shadow-sm border small">
+              <div className="fw-bold mb-2 text-primary d-flex align-items-center gap-1">
+                <Settings size={14} /> Schedule Settings
+              </div>
+              <div className="mb-2">
+                <label className="form-label mb-1 text-muted fw-bold" style={{ fontSize: '0.7rem' }}>PROJECT NAME OVERRIDE</label>
+                <input 
+                  type="text" 
+                  className="form-control form-control-sm bg-light border-0" 
+                  placeholder="e.g. Alpha Project"
+                  value={overrideProjectName}
+                  onChange={(e) => setOverrideProjectName(e.target.value)}
+                />
+              </div>
+              <div className="mb-0">
+                <label className="form-label mb-1 text-muted fw-bold" style={{ fontSize: '0.7rem' }}>PROJECT CODE OVERRIDE</label>
+                <input 
+                  type="text" 
+                  className="form-control form-control-sm bg-light border-0" 
+                  placeholder="e.g. 101"
+                  value={overrideProjectCode}
+                  onChange={(e) => setOverrideProjectCode(e.target.value)}
+                />
+              </div>
+              <div className="mt-2 text-muted" style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>
+                Use these to match timesheets if the file lacks name/code columns.
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

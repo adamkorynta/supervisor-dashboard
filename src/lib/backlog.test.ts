@@ -81,4 +81,39 @@ describe('Backlog Curve Generation', () => {
     // Burn rate should be calculated
     expect(curves[0].burnRate).toBeGreaterThan(0);
   });
+
+  it('should match projects by name when code is missing', () => {
+    const schedules = [
+      {
+        taskId: 'T1',
+        taskName: 'Design',
+        startDate: new Date('2026-01-01'),
+        endDate: new Date('2026-12-31'),
+        durationDays: 365,
+        laborHours: 1000,
+        cost: 50000,
+        projectName: 'Alpha Project'
+      }
+    ];
+
+    const entries = [
+      {
+        id: '1',
+        employeeId: 'E1',
+        employeeName: 'Alice',
+        date: new Date('2026-06-01'),
+        hours: 40,
+        project: 'Alpha Project',
+        category: 'Billable' as const,
+        billable: true,
+        cost: 2000
+      }
+    ];
+
+    const curves = buildBacklogCurves(schedules, entries);
+
+    expect(curves).toHaveLength(1);
+    expect(curves[0].projectName).toBe('Alpha Project');
+    expect(curves[0].burnRate).toBeGreaterThan(0);
+  });
 });

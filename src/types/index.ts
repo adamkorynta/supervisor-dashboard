@@ -105,6 +105,7 @@ export interface ProjectTaskSchedule {
   laborResources?: string;
   notes?: string;
   projectCode?: string; // Optional: helps in matching if multiple projects' schedules are uploaded
+  projectName?: string;
 }
 
 export interface NormalizedData {

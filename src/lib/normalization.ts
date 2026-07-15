@@ -80,7 +80,7 @@ function getFridayPostingDate(date: Date): Date {
 
 export function validateMapping(headers: string[], mapping: ColumnMapping): { isValid: boolean; missingFields: string[] } {
   const requiredFields: (keyof ColumnMapping)[] = ['employeeName', 'hours', 'project'];
-  const missingFields: string[] = [];
+  const missingFields: (keyof ColumnMapping)[] = [];
 
   requiredFields.forEach(field => {
     const columnName = mapping[field];
@@ -770,7 +770,8 @@ export function normalizeProjectSchedules(rawData: any[]): ProjectTaskSchedule[]
     const cost = parseNumber(row[pickHeader(Object.keys(row), ['Cost ($)', 'Cost'])]) || 0;
     const laborResources = String(row[pickHeader(Object.keys(row), ['Labor Resources', 'Resources'])] || '').trim();
     const notes = String(row[pickHeader(Object.keys(row), ['Notes'])] || '').trim();
-    const projectCode = String(row[pickHeader(Object.keys(row), ['Project Code', 'Project'])] || '').trim();
+    const projectCode = String(row[pickHeader(Object.keys(row), ['Project Code', 'Project', 'Project ID', 'Project Number'])] || '').trim();
+    const projectName = String(row[pickHeader(Object.keys(row), ['Project Name', 'Project Description', 'Description'])] || '').trim();
 
     return {
       taskId,
@@ -783,7 +784,8 @@ export function normalizeProjectSchedules(rawData: any[]): ProjectTaskSchedule[]
       cost,
       laborResources: laborResources || undefined,
       notes: notes || undefined,
-      projectCode: projectCode || undefined
+      projectCode: projectCode || undefined,
+      projectName: projectName || undefined
     };
   }).filter(s => s.taskName);
 }
