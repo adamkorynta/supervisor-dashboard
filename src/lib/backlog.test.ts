@@ -74,6 +74,12 @@ describe('Backlog Curve Generation', () => {
     expect(curves[0].totalLaborRemaining).toBe(50000);
     expect(curves[0].series.length).toBeGreaterThan(0);
     
+    // Check for actual cost data
+    // The dates might be affected by timezone, so we should look for a point that has actualCost
+    const historicalPoint = curves[0].series.find(p => p.actualCost === 2000);
+    expect(historicalPoint).toBeDefined();
+    expect(historicalPoint?.cumulativeActualCost).toBe(2000);
+    
     // Last point should be zero
     const lastPoint = curves[0].series[curves[0].series.length - 1];
     expect(lastPoint.backlogRemaining).toBe(0);

@@ -15,10 +15,13 @@ export interface BacklogCurve {
   projectName: string;
   totalLaborRemaining: number;
   finishDate: Date;
+  startDate: Date;
   burnRate: number; // monthly or weekly burn rate based on timesheet history
   series: {
     date: string;
-    backlogRemaining: number;
+    backlogRemaining?: number;
+    actualCost?: number;
+    cumulativeActualCost?: number;
   }[];
 }
 
@@ -619,38 +622,79 @@ export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: Ti
     // Use monthly burn rate from history
     const monthlyBurnRate = calculateBurnRate(projectEntries, 'month');
     
-    // Generate series: straight line from today (or start of data) to finishDate
-    const series: { date: string; backlogRemaining: number }[] = [];
+    // Calculate actual cost series from historical entries
+    const historicalSeries: Record<string, { actualCost: number }> = {};
+    projectEntries.forEach(e => {
+      const monthKey = format(startOfMonth(e.date), 'yyyy-MM-dd');
+      if (!historicalSeries[monthKey]) historicalSeries[monthKey] = { actualCost: 0 };
+      historicalSeries[monthKey].actualCost += getEntryEffort(e);
+    });
+
+    const sortedMonthKeys = Object.keys(historicalSeries).sort();
+    const startDate = sortedMonthKeys.length > 0 ? new Date(sortedMonthKeys[0]) : startOfMonth(new Date());
+
+    // Generate series: historical actuals + projected backlog
+    const series: BacklogCurve['series'] = [];
+    let cumulativeActualCost = 0;
+
+    // Add historical points
+    sortedMonthKeys.forEach(monthKey => {
+      cumulativeActualCost += historicalSeries[monthKey].actualCost;
+      series.push({
+        date: monthKey,
+        actualCost: historicalSeries[monthKey].actualCost,
+        cumulativeActualCost
+      });
+    });
+
     const today = startOfDay(new Date());
-    const startOfCurve = today;
+    const startOfProjectedCurve = today > finishDate ? finishDate : today;
     
-    if (finishDate > startOfCurve) {
-      const totalDays = differenceInCalendarDays(finishDate, startOfCurve);
-      // Create monthly points for the curve
-      let current = startOfMonth(startOfCurve);
+    if (finishDate > startOfProjectedCurve) {
+      const totalDays = differenceInCalendarDays(finishDate, startOfProjectedCurve);
+      // Create monthly points for the projected curve
+      let current = startOfMonth(startOfProjectedCurve);
       while (current <= startOfMonth(finishDate)) {
-        if (current >= startOfCurve) {
-          const daysFromStart = differenceInCalendarDays(current, startOfCurve);
+        if (current >= startOfProjectedCurve) {
+          const daysFromStart = differenceInCalendarDays(current, startOfProjectedCurve);
           const ratio = Math.max(0, 1 - (daysFromStart / totalDays));
-          series.push({
-            date: format(current, 'yyyy-MM-dd'),
-            backlogRemaining: totalLaborRemaining * ratio
-          });
+          const dateKey = format(current, 'yyyy-MM-dd');
+          
+          // If we already have an actual point for this month, we just add the projected value to it
+          const existingPoint = series.find(p => p.date === dateKey);
+          if (existingPoint) {
+            existingPoint.backlogRemaining = totalLaborRemaining * ratio;
+          } else {
+            series.push({
+              date: dateKey,
+              backlogRemaining: totalLaborRemaining * ratio
+            });
+          }
         }
         current = startOfMonth(addDays(current, 32)); // Jump to next month
       }
       // Add final point
-      series.push({
-        date: format(finishDate, 'yyyy-MM-dd'),
-        backlogRemaining: 0
-      });
+      const finishDateKey = format(finishDate, 'yyyy-MM-dd');
+      const existingFinishPoint = series.find(p => p.date === finishDateKey);
+      if (existingFinishPoint) {
+        existingFinishPoint.backlogRemaining = 0;
+      } else {
+        series.push({
+          date: finishDateKey,
+          backlogRemaining: 0
+        });
+      }
     }
+
+    // Sort series by date
+    series.sort((a, b) => a.date.localeCompare(b.date));
 
     curves.push({
       projectCode: projectCode || '',
       projectName,
       totalLaborRemaining,
       finishDate,
+      startDate,
       burnRate: monthlyBurnRate,
       series
     });

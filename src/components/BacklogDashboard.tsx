@@ -7,8 +7,8 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Clock, Info } from 'lucide-react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Clock, Info, Calendar } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -23,12 +23,16 @@ import { useData } from '@/lib/DataContext';
 import { buildBacklogCurves, BacklogCurve } from '@/lib/projectAnalytics';
 import { formatCurrency } from '@/types';
 import { format } from 'date-fns';
-import {ValueType} from "recharts/types/component/DefaultTooltipContent";
+import {NameType, ValueType} from "recharts/types/component/DefaultTooltipContent";
 
 export default function BacklogDashboard() {
   const { data } = useData();
   const [curves, setCurves] = useState<BacklogCurve[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  
+  // Local date range state
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
 
   useEffect(() => {
     if (!data?.projectSchedules || data.projectSchedules.length === 0) {
@@ -42,10 +46,36 @@ export default function BacklogDashboard() {
       const nextCurves = buildBacklogCurves(data.projectSchedules, data.entries);
       setCurves(nextCurves);
       setIsProcessing(false);
+      
+      // Initialize date range from curves if not set
+      if (nextCurves.length > 0) {
+        const allStartDates = nextCurves.map(c => c.startDate.getTime());
+        const allEndDates = nextCurves.map(c => c.finishDate.getTime());
+        const minStart = new Date(Math.min(...allStartDates));
+        const maxEnd = new Date(Math.max(...allEndDates));
+        
+        setStartDate(prev => prev || format(minStart, 'yyyy-MM-dd'));
+        setEndDate(prev => prev || format(maxEnd, 'yyyy-MM-dd'));
+      }
     }, 0);
 
     return () => clearTimeout(timeoutId);
   }, [data]);
+
+  // Filter curves data by date window locally
+  const filteredCurves = useMemo(() => {
+    if (!startDate && !endDate) return curves;
+    
+    return curves.map(curve => ({
+      ...curve,
+      series: curve.series.filter(p => {
+        const date = p.date;
+        if (startDate && date < startDate) return false;
+        if (endDate && date > endDate) return false;
+        return true;
+      })
+    }));
+  }, [curves, startDate, endDate]);
 
   if (!data) return null;
 
@@ -67,13 +97,34 @@ export default function BacklogDashboard() {
   return (
     <div className="container-fluid p-0">
       <div className="card mb-4 border-0 shadow-sm rounded-3">
-        <div className="card-body p-4 d-flex align-items-center">
-          <div className="bg-primary bg-opacity-10 text-primary rounded-3 p-3 me-3">
-            <Clock size={24} />
+        <div className="card-body p-4 d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div className="d-flex align-items-center">
+            <div className="bg-primary bg-opacity-10 text-primary rounded-3 p-3 me-3">
+              <Clock size={24} />
+            </div>
+            <div>
+              <h4 className="fw-bold mb-0">Labor Backlog Curves</h4>
+              <p className="text-muted small mb-0">Projected labor spend to completion based on task schedules</p>
+            </div>
           </div>
-          <div>
-            <h4 className="fw-bold mb-0">Labor Backlog Curves</h4>
-            <p className="text-muted small mb-0">Projected labor spend to completion based on task schedules</p>
+          
+          <div className="d-flex align-items-center gap-2 bg-light p-2 rounded-3 border">
+            <div className="text-muted small fw-bold px-2 d-none d-md-block"><Calendar size={14} className="me-1" /> DATE WINDOW</div>
+            <div className="d-flex align-items-center gap-2">
+              <input 
+                type="date" 
+                className="form-control form-control-sm border-0 bg-white" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+              <span className="text-muted small">to</span>
+              <input 
+                type="date" 
+                className="form-control form-control-sm border-0 bg-white" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -117,7 +168,7 @@ export default function BacklogDashboard() {
                   </div>
                 </div>
 
-                <div style={{ width: '100%', height: 300 }}>
+                <div style={{ width: '100%', height: 400 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       data={curve.series}
@@ -126,22 +177,36 @@ export default function BacklogDashboard() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                       <XAxis 
                         dataKey="date" 
-                        tickFormatter={(val) => format(new Date(val), 'MMM yy')}
-                        tick={{ fontSize: 12 }}
+                        domain={[startDate || 'auto', endDate || 'auto']}
+                        type="category"
+                        tickFormatter={(val) => {
+                          try {
+                            return format(new Date(val), 'MMM yy');
+                          } catch (e) {
+                            return val;
+                          }
+                        }}
+                        tick={{ fontSize: 11 }}
                         minTickGap={30}
                       />
                       <YAxis 
                         tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
-                        tick={{ fontSize: 12 }}
+                        tick={{ fontSize: 11 }}
                       />
                       <Tooltip 
-                        formatter={(value: ValueType | undefined) => {
+                        formatter={(value: ValueType | undefined, name: NameType | string | undefined) => {
                             if (typeof value === 'number') {
-                                return [formatCurrency(value), 'Backlog Remaining']
+                                return [formatCurrency(value), name]
                             }
-                            return ['N/A', 'Backlog Remaining'];
+                            return ['N/A', name];
                         }}
-                        labelFormatter={(label) => format(new Date(label), 'MMM d, yyyy')}
+                        labelFormatter={(label) => {
+                          try {
+                            return format(new Date(label), 'MMM d, yyyy');
+                          } catch (e) {
+                            return label;
+                          }
+                        }}
                       />
                       <Legend verticalAlign="top" height={36}/>
                       <Line
@@ -150,8 +215,30 @@ export default function BacklogDashboard() {
                         dataKey="backlogRemaining"
                         stroke="#0d6efd"
                         strokeWidth={3}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                      <Line
+                        name="Actual Monthly Burn"
+                        type="monotone"
+                        dataKey="actualCost"
+                        stroke="#dc3545"
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                      <Line
+                        name="Cumulative Actual Cost"
+                        type="monotone"
+                        dataKey="cumulativeActualCost"
+                        stroke="#198754"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
                       />
                     </LineChart>
                   </ResponsiveContainer>
