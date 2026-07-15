@@ -93,17 +93,33 @@ export interface ProjectSnapshot {
   raw: Record<string, unknown>;
 }
 
+export interface ProjectTaskSchedule {
+  taskId: string;
+  taskName: string;
+  dependency?: string;
+  startDate: Date;
+  endDate: Date;
+  durationDays: number;
+  laborHours: number;
+  cost: number;
+  laborResources?: string;
+  notes?: string;
+  projectCode?: string; // Optional: helps in matching if multiple projects' schedules are uploaded
+}
+
 export interface NormalizedData {
   entries: TimesheetEntry[];
   supervisors: SupervisorMapping[];
   projections: ProjectionEntry[];
   projectionVersions?: ProjectionVersion[];
   projects: ProjectSnapshot[];
+  projectSchedules: ProjectTaskSchedule[];
   unmatchedEmployees: string[];
   rawTimesheetHeaders: string[];
   rawSupervisorHeaders: string[];
   rawProjectionHeaders: string[];
   rawProjectHeaders: string[];
+  rawScheduleHeaders: string[];
 }
 
 export interface ChartSpec {

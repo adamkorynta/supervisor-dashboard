@@ -6,9 +6,21 @@
  */
 
 import { addDays, addWeeks, differenceInCalendarDays, endOfDay, format, startOfDay, startOfMonth, startOfWeek } from 'date-fns';
-import { formatCurrency, ProjectSnapshot, TimesheetEntry } from '@/types';
+import { formatCurrency, ProjectSnapshot, ProjectTaskSchedule, TimesheetEntry } from '@/types';
 
 export type ProjectRisk = 'on-track' | 'watch' | 'at-risk' | 'over-budget' | 'unknown';
+
+export interface BacklogCurve {
+  projectCode: string;
+  projectName: string;
+  totalLaborRemaining: number;
+  finishDate: Date;
+  burnRate: number; // monthly or weekly burn rate based on timesheet history
+  series: {
+    date: string;
+    backlogRemaining: number;
+  }[];
+}
 
 export interface ProjectSummary {
   project: ProjectSnapshot;
@@ -565,6 +577,75 @@ function assessRisk(project: ProjectSnapshot, effortSpent: number, budgetHours: 
 
 function getEntryEffort(entry: TimesheetEntry): number {
   return Number.isFinite(entry.cost) ? entry.cost || 0 : 0;
+}
+
+/**
+ * Generates backlog curves for projects based on task schedules and timesheet history.
+ */
+export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: TimesheetEntry[]): BacklogCurve[] {
+  // Group schedules by projectCode
+  const projectMap = new Map<string, ProjectTaskSchedule[]>();
+  schedules.forEach(s => {
+    const code = s.projectCode || 'Unassigned';
+    if (!projectMap.has(code)) projectMap.set(code, []);
+    projectMap.get(code)!.push(s);
+  });
+
+  const curves: BacklogCurve[] = [];
+
+  projectMap.forEach((projectSchedules, projectCode) => {
+    const totalLaborRemaining = projectSchedules.reduce((sum, s) => sum + s.cost, 0);
+    const finishDate = new Date(Math.max(...projectSchedules.map(s => s.endDate.getTime())));
+    
+    // Find project entries to calculate burn rate
+    const projectEntries = entries.filter(e => {
+      if (!projectCode || projectCode === 'Unassigned') return false;
+      const entryCode = (e.projectCode || '').trim().toLowerCase();
+      const entryProject = (e.project || '').trim().toLowerCase();
+      return entryCode === projectCode.toLowerCase() || entryProject.includes(projectCode.toLowerCase());
+    });
+
+    // Use monthly burn rate from history
+    const monthlyBurnRate = calculateBurnRate(projectEntries, 'month');
+    
+    // Generate series: straight line from today (or start of data) to finishDate
+    const series: { date: string; backlogRemaining: number }[] = [];
+    const today = startOfDay(new Date());
+    const startOfCurve = today;
+    
+    if (finishDate > startOfCurve) {
+      const totalDays = differenceInCalendarDays(finishDate, startOfCurve);
+      // Create monthly points for the curve
+      let current = startOfMonth(startOfCurve);
+      while (current <= startOfMonth(finishDate)) {
+        if (current >= startOfCurve) {
+          const daysFromStart = differenceInCalendarDays(current, startOfCurve);
+          const ratio = Math.max(0, 1 - (daysFromStart / totalDays));
+          series.push({
+            date: format(current, 'yyyy-MM-dd'),
+            backlogRemaining: totalLaborRemaining * ratio
+          });
+        }
+        current = startOfMonth(addDays(current, 32)); // Jump to next month
+      }
+      // Add final point
+      series.push({
+        date: format(finishDate, 'yyyy-MM-dd'),
+        backlogRemaining: 0
+      });
+    }
+
+    curves.push({
+      projectCode,
+      projectName: projectCode, // Use project code as name if we don't have a better one here
+      totalLaborRemaining,
+      finishDate,
+      burnRate: monthlyBurnRate,
+      series
+    });
+  });
+
+  return curves;
 }
 
 /**

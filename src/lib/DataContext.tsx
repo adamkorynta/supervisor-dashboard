@@ -8,7 +8,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { NormalizedData, TimesheetEntry, SupervisorMapping } from '../types';
+import { NormalizedData } from '@/types';
 
 interface DataContextType {
   data: NormalizedData | null;
@@ -35,7 +35,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch('/api/data');
         const result = await response.json();
         
-        if (result && result.entries) {
+        if (result?.entries) {
           // Re-hydrate dates
           const hydratedData: NormalizedData = {
             ...result,
@@ -79,7 +79,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 dueDate: task.dueDate ? new Date(task.dueDate) : undefined
               }))
             })),
-            rawProjectHeaders: result.rawProjectHeaders || []
+            projectSchedules: (result.projectSchedules || []).map((s: any) => ({
+              ...s,
+              startDate: new Date(s.startDate),
+              endDate: new Date(s.endDate)
+            })),
+            rawProjectHeaders: result.rawProjectHeaders || [],
+            rawScheduleHeaders: result.rawScheduleHeaders || []
           };
           setData(hydratedData);
           
