@@ -16,12 +16,13 @@ import ProjectionsDashboard from '@/components/ProjectionsDashboard';
 import ProjectManagementOverview from '@/components/ProjectManagementOverview';
 import ProjectManagementDetail from '@/components/ProjectManagementDetail';
 import FileUpload from '@/components/FileUpload';
+import BacklogDashboard from '@/components/BacklogDashboard';
 import DateFilter from '@/components/DateFilter';
-import { Upload, User, Users, Clock, Building2, BriefcaseBusiness, FileChartColumn, Table2 } from 'lucide-react';
+import { Upload, User, Users, Clock, Building2, BriefcaseBusiness, FileChartColumn, Table2, TrendingDown } from 'lucide-react';
 
 export default function Home() {
   const { data, isLoading } = useData();
-  const [activeTab, setActiveTab] = useState<'branch' | 'employee' | 'supervisor' | 'projections' | 'projectOverview' | 'projectDetail' | 'upload'>('upload');
+  const [activeTab, setActiveTab] = useState<'branch' | 'employee' | 'supervisor' | 'projections' | 'projectOverview' | 'projectDetail' | 'backlog' | 'upload'>('upload');
   const [selectedProjectCode, setSelectedProjectCode] = useState<string>('');
   const hasHandledInitialNavigation = useRef(false);
   const isProjectManagementTab = activeTab === 'projectOverview' || activeTab === 'projectDetail';
@@ -46,6 +47,7 @@ export default function Home() {
     { id: 'projections', label: 'PROJECTIONS', icon: <Table2 size={20} />, disabled: !data },
     { id: 'projectOverview', label: 'PROJECT MGMT OVERVIEW', icon: <BriefcaseBusiness size={20} />, disabled: !data },
     { id: 'projectDetail', label: 'PROJECT MGMT DETAIL', icon: <FileChartColumn size={20} />, disabled: !data },
+    { id: 'backlog', label: 'BACKLOG CURVES', icon: <TrendingDown size={20} />, disabled: !data },
   ];
 
   return (
@@ -154,6 +156,7 @@ export default function Home() {
                   onSelectedProjectChange={setSelectedProjectCode}
                 />
               )}
+              {activeTab === 'backlog' && <BacklogDashboard />}
             </div>
           )}
         </div>

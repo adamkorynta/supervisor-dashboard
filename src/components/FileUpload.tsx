@@ -8,15 +8,14 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Upload, FileText, Check, AlertCircle, Settings, Users, BriefcaseBusiness } from 'lucide-react';
+import {Upload, FileText, Check, AlertCircle, Settings, Users, BriefcaseBusiness, Clock} from 'lucide-react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
-import { normalizeTimesheet, normalizeProjections, normalizeProjectSnapshots, mergeSupervisors, DEFAULT_MAPPING, ColumnMapping, validateMapping } from '@/lib/normalization';
+import { normalizeTimesheet, normalizeProjections, normalizeProjectSnapshots, normalizeProjectSchedules, mergeSupervisors, DEFAULT_MAPPING, ColumnMapping, validateMapping } from '@/lib/normalization';
 import { useData } from '@/lib/DataContext';
 import { ProjectionEntry, ProjectSnapshot, SupervisorMapping } from '@/types';
 import { DEFAULT_SUPERVISOR_DATA } from '@/lib/seedData';
 import ColumnMappingUI from './ColumnMappingUI';
-import SchemaInspection from './SchemaInspection';
 
 export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
   const { data, setData, setDataBounds, setIsLoading } = useData();
@@ -28,6 +27,10 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
   const [projectionHeaders, setProjectionHeaders] = useState<string[]>([]);
   const [projectData, setProjectData] = useState<any[] | null>(null);
   const [projectHeaders, setProjectHeaders] = useState<string[]>([]);
+  const [scheduleData, setScheduleData] = useState<any[] | null>(null);
+  const [scheduleHeaders, setScheduleHeaders] = useState<string[]>([]);
+  const [overrideProjectName, setOverrideProjectName] = useState('');
+  const [overrideProjectCode, setOverrideProjectCode] = useState('');
   const [mapping, setMapping] = useState<ColumnMapping>(DEFAULT_MAPPING);
   const [showMapping, setShowMapping] = useState(false);
   const [showLogs, setShowLogs] = useState(false);
@@ -57,9 +60,24 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       setProjectionHeaders((window as any).tempProjectionHeaders || []);
       setStatus({ type: 'success', message: 'Projections loaded. Click "Generate Analytics Dashboard" to save.' });
     }
+    if (typeof window !== 'undefined' && (window as any).tempScheduleData && !scheduleData) {
+      console.log(`[FileUpload] Recovery effect - Restoring ${ (window as any).tempScheduleData.length } schedule rows from window storage`);
+      setScheduleData((window as any).tempScheduleData);
+      setScheduleHeaders((window as any).tempScheduleHeaders || []);
+      setOverrideProjectName((window as any).tempOverrideProjectName || '');
+      setOverrideProjectCode((window as any).tempOverrideProjectCode || '');
+      setStatus({ type: 'success', message: 'Project schedules loaded. Click "Generate Analytics Dashboard" to save.' });
+    }
   }, []);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'timesheet' | 'supervisor' | 'projections' | 'projects') => {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).tempOverrideProjectName = overrideProjectName;
+      (window as any).tempOverrideProjectCode = overrideProjectCode;
+    }
+  }, [overrideProjectName, overrideProjectCode]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'timesheet' | 'supervisor' | 'projections' | 'projects' | 'schedules') => {
     console.log(`[FileUpload] handleFileUpload triggered for ${type}`);
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,6 +157,19 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
         setProjectData(parsedResults.data);
         setProjectHeaders(parsedResults.headers);
         setStatus({ type: 'success', message: `Project snapshot uploaded with ${parsedResults.data.length} rows. Please click "Generate Analytics Dashboard" to save.` });
+      } else if (type === 'schedules') {
+        setUploadProgress({ percent: 95, stage: 'Processing project schedules...' });
+        if (typeof window !== 'undefined') {
+          (window as any).tempScheduleData = parsedResults.data;
+          (window as any).tempScheduleHeaders = parsedResults.headers;
+          (window as any).tempOverrideProjectName = '';
+          (window as any).tempOverrideProjectCode = '';
+        }
+        setScheduleData(parsedResults.data);
+        setScheduleHeaders(parsedResults.headers);
+        setOverrideProjectName('');
+        setOverrideProjectCode('');
+        setStatus({ type: 'success', message: `Project schedules uploaded with ${parsedResults.data.length} rows. Please click "Generate Analytics Dashboard" to save.` });
       }
     } catch (err) {
       setStatus({ type: 'error', message: `Error parsing file: ${err}` });
@@ -147,7 +178,7 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
     }
   };
 
-  const parseFile = (file: File, type: 'timesheet' | 'supervisor' | 'projections' | 'projects', onProgress?: (percent: number) => void): Promise<{ data: any[], headers: string[] }> => {
+  const parseFile = (file: File, type: 'timesheet' | 'supervisor' | 'projections' | 'projects' | 'schedules', onProgress?: (percent: number) => void): Promise<{ data: any[], headers: string[] }> => {
     console.log(`[FileUpload] Starting parseFile: ${file.name} (${file.size} bytes)`);
     return new Promise((resolve, reject) => {
       if (file.name.endsWith('.csv')) {
@@ -270,6 +301,18 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       projects = normalizeProjectSnapshots(projectData);
     }
 
+    let projectSchedules = data?.projectSchedules || [];
+    if (scheduleData) {
+      projectSchedules = normalizeProjectSchedules(scheduleData);
+      if (overrideProjectName || overrideProjectCode) {
+        projectSchedules = projectSchedules.map(s => ({
+          ...s,
+          projectName: overrideProjectName || s.projectName,
+          projectCode: overrideProjectCode || s.projectCode
+        }));
+      }
+    }
+
     setUploadProgress({ percent: 60, stage: 'Merging supervisor chain...' });
     const effectiveSupervisors = supervisorData === DEFAULT_SUPERVISOR_DATA && data?.supervisors?.length
       ? data.supervisors
@@ -286,11 +329,13 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       projections,
       projectionVersions: data?.projectionVersions || [],
       projects,
+      projectSchedules,
       unmatchedEmployees,
       rawTimesheetHeaders: timesheetHeaders.length > 0 ? timesheetHeaders : data?.rawTimesheetHeaders || [],
       rawSupervisorHeaders: supervisorHeaders.length > 0 ? supervisorHeaders : data?.rawSupervisorHeaders || [],
       rawProjectionHeaders: projectionHeaders.length > 0 ? projectionHeaders : data?.rawProjectionHeaders || [],
       rawProjectHeaders: projectHeaders.length > 0 ? projectHeaders : data?.rawProjectHeaders || [],
+      rawScheduleHeaders: scheduleHeaders.length > 0 ? scheduleHeaders : data?.rawScheduleHeaders || [],
     };
 
     setUploadProgress({ percent: 80, stage: 'Saving to server...' });
@@ -385,45 +430,85 @@ export default function FileUpload({ onSuccess }: { onSuccess?: () => void }) {
       </div>
 
       <div className="row g-4 mb-4">
-        <div className="col-md-6 col-xl-3">
+        <div className="col-md-4 col-xl-2">
           <UploadCard
             title="Timesheet Export"
-            description="Upload CSV or XLSX exported worklogs"
-            icon={<FileText size={32} className="text-primary" />}
+            description="Upload CSV/XLSX worklogs"
+            icon={<FileText size={24} className="text-primary" />}
             onUpload={(e) => handleFileUpload(e, 'timesheet')}
             isLoaded={!!timesheetData}
             progress={uploadProgress?.stage.includes('timesheet') ? uploadProgress.percent : undefined}
           />
         </div>
-        <div className="col-md-6 col-xl-3">
+        <div className="col-md-4 col-xl-2">
           <UploadCard
             title="Supervisor Chain"
-            description="Upload employee-to-manager mapping"
-            icon={<Users size={32} className="text-primary" />}
+            description="Upload manager mapping"
+            icon={<Users size={24} className="text-primary" />}
             onUpload={(e) => handleFileUpload(e, 'supervisor')}
             isLoaded={!!supervisorData && supervisorData !== DEFAULT_SUPERVISOR_DATA}
             progress={uploadProgress?.stage.includes('supervisor') ? uploadProgress.percent : undefined}
           />
         </div>
-        <div className="col-md-6 col-xl-3">
+        <div className="col-md-4 col-xl-2">
           <UploadCard
             title="Projections"
-            description="Upload weekly 4-week projections"
-            icon={<Upload size={32} className="text-primary" />}
+            description="Upload 4-week projections"
+            icon={<Upload size={24} className="text-primary" />}
             onUpload={(e) => handleFileUpload(e, 'projections')}
             isLoaded={!!projectionData}
             progress={uploadProgress?.stage.includes('projections') ? uploadProgress.percent : undefined}
           />
         </div>
-        <div className="col-md-6 col-xl-3">
+        <div className="col-md-4 col-xl-3">
           <UploadCard
             title="Project Snapshot"
-            description="Upload current project status and budgets"
-            icon={<BriefcaseBusiness size={32} className="text-primary" />}
+            description="Upload project status and budgets"
+            icon={<BriefcaseBusiness size={24} className="text-primary" />}
             onUpload={(e) => handleFileUpload(e, 'projects')}
             isLoaded={!!projectData || !!data?.projects?.length}
-            progress={uploadProgress?.stage.includes('project') ? uploadProgress.percent : undefined}
+            progress={uploadProgress?.stage.includes('project') && !uploadProgress?.stage.includes('schedule') ? uploadProgress.percent : undefined}
           />
+        </div>
+        <div className={`col-md-4 col-xl-3 ${(scheduleData || !!data?.projectSchedules?.length) ? 'h-100' : ''}`}>
+          <UploadCard
+            title="Project Schedule"
+            description="Upload task schedule (backlog curve)"
+            icon={<Clock size={24} className="text-primary" />}
+            onUpload={(e) => handleFileUpload(e, 'schedules')}
+            isLoaded={!!scheduleData || !!data?.projectSchedules?.length}
+            progress={uploadProgress?.stage.includes('schedule') ? uploadProgress.percent : undefined}
+          />
+          {(scheduleData || !!data?.projectSchedules?.length) && (
+            <div className="mt-2 p-3 bg-white rounded shadow-sm border small">
+              <div className="fw-bold mb-2 text-primary d-flex align-items-center gap-1">
+                <Settings size={14} /> Schedule Settings
+              </div>
+              <div className="mb-2">
+                <label className="form-label mb-1 text-muted fw-bold" style={{ fontSize: '0.7rem' }}>PROJECT NAME OVERRIDE</label>
+                <input 
+                  type="text" 
+                  className="form-control form-control-sm bg-light border-0" 
+                  placeholder="e.g. Alpha Project"
+                  value={overrideProjectName}
+                  onChange={(e) => setOverrideProjectName(e.target.value)}
+                />
+              </div>
+              <div className="mb-0">
+                <label className="form-label mb-1 text-muted fw-bold" style={{ fontSize: '0.7rem' }}>PROJECT CODE OVERRIDE</label>
+                <input 
+                  type="text" 
+                  className="form-control form-control-sm bg-light border-0" 
+                  placeholder="e.g. 101"
+                  value={overrideProjectCode}
+                  onChange={(e) => setOverrideProjectCode(e.target.value)}
+                />
+              </div>
+              <div className="mt-2 text-muted" style={{ fontSize: '0.65rem', lineHeight: '1.2' }}>
+                Use these to match timesheets if the file lacks name/code columns.
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

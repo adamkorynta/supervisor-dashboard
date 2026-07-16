@@ -20,8 +20,9 @@ import {
   CORPORATE_PROJECT_CODE_REGEX,
   IT_PROJECT_CODE,
   ProjectionEntry,
-  ProjectSnapshot
-} from '../types';
+  ProjectSnapshot,
+  ProjectTaskSchedule
+} from '@/types';
 
 export interface ColumnMapping {
   employeeId?: string;
@@ -79,7 +80,7 @@ function getFridayPostingDate(date: Date): Date {
 
 export function validateMapping(headers: string[], mapping: ColumnMapping): { isValid: boolean; missingFields: string[] } {
   const requiredFields: (keyof ColumnMapping)[] = ['employeeName', 'hours', 'project'];
-  const missingFields: string[] = [];
+  const missingFields: (keyof ColumnMapping)[] = [];
 
   requiredFields.forEach(field => {
     const columnName = mapping[field];
@@ -386,7 +387,7 @@ function parseValueToDate(dateVal: any): Date | null {
   return null;
 }
 
-function pickHeader(headers: string[], candidates: string[]): string | undefined {
+function pickHeader(headers: string[], candidates: string[]): string {
   const normalizedHeaders = headers.map(header => ({
     header,
     normalized: header.toLowerCase().replace(/[^a-z0-9]/g, '')
@@ -404,7 +405,7 @@ function pickHeader(headers: string[], candidates: string[]): string | undefined
     if (partial) return partial.header;
   }
 
-  return undefined;
+  return "";
 }
 
 function parseNumber(value: unknown): number | undefined {
@@ -750,6 +751,43 @@ function normalizeProjectScheduleSummary(rawData: any[]): ProjectSnapshot[] {
 
 function isRollupTaskName(taskName: string): boolean {
   return ROLLUP_TASK_NAMES.has(taskName.trim().toLowerCase());
+}
+
+/**
+ * Normalizes project task schedules from an upload.
+ * Columns: Task ID, Task Name, Dependency, Start Date, End Date, Duration (Days), Labor Hours, Cost ($), Labor Resources, Notes
+ */
+export function normalizeProjectSchedules(rawData: any[]): ProjectTaskSchedule[] {
+  return rawData.map((row, index) => {
+    // Pick headers flexibly
+    const taskId = String(row[pickHeader(Object.keys(row), ['Task ID', 'ID'])] || index).trim();
+    const taskName = String(row[pickHeader(Object.keys(row), ['Task Name', 'Name'])] || '').trim();
+    const dependency = String(row[pickHeader(Object.keys(row), ['Dependency'])] || '').trim();
+    const startDate = parseValueToDate(row[pickHeader(Object.keys(row), ['Start Date', 'Start'])]) || new Date();
+    const endDate = parseValueToDate(row[pickHeader(Object.keys(row), ['End Date', 'End', 'Finish Date', 'Finish'])]) || new Date();
+    const durationDays = parseNumber(row[pickHeader(Object.keys(row), ['Duration (Days)', 'Duration'])]) || 0;
+    const laborHours = parseNumber(row[pickHeader(Object.keys(row), ['Labor Hours', 'Hours'])]) || 0;
+    const cost = parseNumber(row[pickHeader(Object.keys(row), ['Cost ($)', 'Cost'])]) || 0;
+    const laborResources = String(row[pickHeader(Object.keys(row), ['Labor Resources', 'Resources'])] || '').trim();
+    const notes = String(row[pickHeader(Object.keys(row), ['Notes'])] || '').trim();
+    const projectCode = String(row[pickHeader(Object.keys(row), ['Project Code', 'Project', 'Project ID', 'Project Number'])] || '').trim();
+    const projectName = String(row[pickHeader(Object.keys(row), ['Project Name', 'Project Description', 'Description'])] || '').trim();
+
+    return {
+      taskId,
+      taskName,
+      dependency: dependency || undefined,
+      startDate,
+      endDate,
+      durationDays,
+      laborHours,
+      cost,
+      laborResources: laborResources || undefined,
+      notes: notes || undefined,
+      projectCode: projectCode || undefined,
+      projectName: projectName || undefined
+    };
+  }).filter(s => s.taskName);
 }
 
 export function normalizeProjections(rawData: any[]): ProjectionEntry[] {

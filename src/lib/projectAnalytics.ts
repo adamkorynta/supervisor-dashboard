@@ -6,9 +6,32 @@
  */
 
 import { addDays, addWeeks, differenceInCalendarDays, endOfDay, format, startOfDay, startOfMonth, startOfWeek } from 'date-fns';
-import { formatCurrency, ProjectSnapshot, TimesheetEntry } from '@/types';
+import { formatCurrency, ProjectSnapshot, ProjectTaskSchedule, TimesheetEntry } from '@/types';
 
 export type ProjectRisk = 'on-track' | 'watch' | 'at-risk' | 'over-budget' | 'unknown';
+
+export interface BacklogCurve {
+  projectCode: string;
+  projectName: string;
+  totalLaborRemaining: number;
+  finishDate: Date;
+  startDate: Date;
+  burnRate: number; // monthly or weekly burn rate based on timesheet history
+  tasks: {
+    taskId: string;
+    taskName: string;
+    cost: number;
+    startDate: Date;
+    endDate: Date;
+  }[];
+  series: {
+    date: string;
+    backlogRemaining?: number;
+    actualCost?: number;
+    cumulativeActualCost?: number;
+    [taskBacklogKey: string]: number | string | undefined;
+  }[];
+}
 
 export interface ProjectSummary {
   project: ProjectSnapshot;
@@ -565,6 +588,156 @@ function assessRisk(project: ProjectSnapshot, effortSpent: number, budgetHours: 
 
 function getEntryEffort(entry: TimesheetEntry): number {
   return Number.isFinite(entry.cost) ? entry.cost || 0 : 0;
+}
+
+/**
+ * Generates backlog curves for projects based on task schedules and timesheet history.
+ */
+export function buildBacklogCurves(schedules: ProjectTaskSchedule[], entries: TimesheetEntry[]): BacklogCurve[] {
+  // Group schedules by project identifier (prefer code, fallback to name)
+  const projectMap = new Map<string, ProjectTaskSchedule[]>();
+  schedules.forEach(s => {
+    const code = s.projectCode || s.projectName || 'Unassigned';
+    if (!projectMap.has(code)) projectMap.set(code, []);
+    projectMap.get(code)!.push(s);
+  });
+
+  const curves: BacklogCurve[] = [];
+
+  projectMap.forEach((projectSchedules, projectIdentifier) => {
+    const totalLaborRemaining = projectSchedules.reduce((sum, s) => sum + s.cost, 0);
+    const finishDate = new Date(Math.max(...projectSchedules.map(s => s.endDate.getTime())));
+    const projectName = projectSchedules.find(s => s.projectName)?.projectName || projectIdentifier;
+    const projectCode = projectSchedules.find(s => s.projectCode)?.projectCode || (projectIdentifier !== projectName ? projectIdentifier : undefined);
+    
+    // Find project entries to calculate burn rate
+    const projectEntries = entries.filter(e => {
+      if (projectIdentifier === 'Unassigned') return false;
+      
+      const entryCode = (e.projectCode || '').trim().toLowerCase();
+      const entryProject = (e.project || '').trim().toLowerCase();
+      
+      const targetCode = projectCode?.toLowerCase();
+      const targetName = projectName?.toLowerCase();
+
+      if (targetCode && entryCode === targetCode) return true;
+      if (targetName && entryProject.includes(targetName)) return true;
+      if (targetCode && entryProject.includes(targetCode)) return true;
+      
+      return false;
+    });
+
+    // Use monthly burn rate from history
+    const monthlyBurnRate = calculateBurnRate(projectEntries, 'month');
+    
+    // Calculate actual cost series from historical entries
+    const historicalSeries: Record<string, { actualCost: number }> = {};
+    projectEntries.forEach(e => {
+      const monthKey = format(startOfMonth(e.date), 'yyyy-MM-dd');
+      if (!historicalSeries[monthKey]) historicalSeries[monthKey] = { actualCost: 0 };
+      historicalSeries[monthKey].actualCost += getEntryEffort(e);
+    });
+
+    const sortedMonthKeys = Object.keys(historicalSeries).sort();
+    const startDate = sortedMonthKeys.length > 0 ? new Date(sortedMonthKeys[0]) : startOfMonth(new Date());
+
+    // Generate series: historical actuals + projected backlog
+    const series: BacklogCurve['series'] = [];
+    let cumulativeActualCost = 0;
+
+    // Add historical points
+    sortedMonthKeys.forEach(monthKey => {
+      cumulativeActualCost += historicalSeries[monthKey].actualCost;
+      series.push({
+        date: monthKey,
+        actualCost: historicalSeries[monthKey].actualCost,
+        cumulativeActualCost
+      });
+    });
+
+    const today = startOfDay(new Date());
+    const startOfProjectedCurve = today > finishDate ? finishDate : today;
+    
+    if (finishDate > startOfProjectedCurve) {
+      const totalDays = differenceInCalendarDays(finishDate, startOfProjectedCurve);
+      // Create monthly points for the projected curve
+      let current = startOfMonth(startOfProjectedCurve);
+      while (current <= startOfMonth(finishDate)) {
+        if (current >= startOfProjectedCurve) {
+          const daysFromStart = differenceInCalendarDays(current, startOfProjectedCurve);
+          const ratio = Math.max(0, 1 - (daysFromStart / totalDays));
+          const dateKey = format(current, 'yyyy-MM-dd');
+          
+          // If we already have an actual point for this month, we just add the projected value to it
+          const existingPoint = series.find(p => p.date === dateKey);
+          if (existingPoint) {
+            existingPoint.backlogRemaining = totalLaborRemaining * ratio;
+          } else {
+            series.push({
+              date: dateKey,
+              backlogRemaining: totalLaborRemaining * ratio
+            });
+          }
+        }
+        current = startOfMonth(addDays(current, 32)); // Jump to next month
+      }
+      // Add final point
+      const finishDateKey = format(finishDate, 'yyyy-MM-dd');
+      const existingFinishPoint = series.find(p => p.date === finishDateKey);
+      if (existingFinishPoint) {
+        existingFinishPoint.backlogRemaining = 0;
+      } else {
+        series.push({
+          date: finishDateKey,
+          backlogRemaining: 0
+        });
+      }
+    }
+
+    series.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Calculate individual task backlog curves
+    projectSchedules.forEach(task => {
+      const taskFinishDate = task.endDate;
+      const taskStartDate = task.startDate;
+      const taskTotalDays = differenceInCalendarDays(taskFinishDate, taskStartDate);
+      const taskKey = `task_${task.taskId || task.taskName}`;
+
+      series.forEach(point => {
+        const pointDate = new Date(point.date);
+        if (pointDate < taskStartDate) {
+          point[taskKey] = task.cost;
+        } else if (pointDate > taskFinishDate) {
+          point[taskKey] = 0;
+        } else if (taskTotalDays > 0) {
+          const daysFromStart = differenceInCalendarDays(pointDate, taskStartDate);
+          const ratio = Math.max(0, 1 - (daysFromStart / taskTotalDays));
+          point[taskKey] = task.cost * ratio;
+        } else {
+          point[taskKey] = 0;
+        }
+      });
+    });
+
+    curves.push({
+      projectCode: projectCode || '',
+      projectName,
+      totalLaborRemaining,
+      finishDate,
+      startDate,
+      burnRate: monthlyBurnRate,
+      tasks: projectSchedules.map(s => ({
+        taskId: s.taskId,
+        taskName: s.taskName,
+        cost: s.cost,
+        startDate: s.startDate,
+        endDate: s.endDate
+      })),
+      series
+    });
+  });
+
+  return curves;
 }
 
 /**
